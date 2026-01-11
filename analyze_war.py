@@ -16,7 +16,11 @@ if not DISCORD_WEBHOOK_URL:
 
 def send_to_discord(message):
     payload = {"content": message}
-    requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    if response.status_code != 200:
+        print(f"Erreur API : {response.status_code}")
+        print(f"API Response Body: {response.text}") # Added to show full response
+        response.raise_for_status()  # Raise an exception for bad status codes
 
 def fetch_war_data():
     url = f"https://api.clashroyale.com/v1/clans/{CLAN_TAG}/riverracelog"
@@ -27,6 +31,7 @@ def fetch_war_data():
     else:
         print(f"Erreur API : {response.status_code}")
         print(f"API Response Body: {response.text}") # Added to show full response
+        response.raise_for_status()  # Raise an exception for bad status codes
         return None
 
 def analyze_and_post():
