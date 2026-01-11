@@ -1,28 +1,26 @@
+import os
 import requests
 import pandas as pd
-from dotenv import dotenv_values
 
 # Configuration
-# Load environment variables from .env file
-env_vars = dotenv_values() 
-API_TOKEN = env_vars.get('API_TOKEN')
-WEBHOOK_URL = env_vars.get('WEBHOOK_URL')
+CLASH_API_TOKEN = os.environ.get('CLASH_API_TOKEN')
+DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 CLAN_TAG = "%23LLJ8LYRP" # Le # doit être encodé en %23
 CLAN_URL = "https://royaleapi.com/clan/LLJ8LYRP/war/analytics"
 
-if not API_TOKEN:
-    raise RuntimeError("API_TOKEN not found in .env file. Please create a .env file with API_TOKEN='YOUR_API_TOKEN_HERE'.")
+if not CLASH_API_TOKEN:
+    raise RuntimeError("CLASH_API_TOKEN environment variable not set.")
 
-if not WEBHOOK_URL:
-    raise RuntimeError("WEBHOOK_URL not found in .env file. Please create a .env file with WEBHOOK_URL='DISCORD_SERVER_WEBHOOK_URL'.")
+if not DISCORD_WEBHOOK_URL:
+    raise RuntimeError("DISCORD_WEBHOOK_URL environment variable not set.")
 
 def send_to_discord(message):
     payload = {"content": message}
-    requests.post(WEBHOOK_URL, json=payload)
+    requests.post(DISCORD_WEBHOOK_URL, json=payload)
 
 def fetch_war_data():
     url = f"https://api.clashroyale.com/v1/clans/{CLAN_TAG}/riverracelog"
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    headers = {"Authorization": f"Bearer {CLASH_API_TOKEN}"}
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         return response.json().get('items', [])
