@@ -11,14 +11,10 @@ CLAN_TAG = "%23LLJ8LYRP" # Le # doit être encodé en %23
 CLAN_URL = "https://royaleapi.com/clan/LLJ8LYRP/war/analytics"
 
 if not API_TOKEN:
-    print("Error: API_TOKEN not found in .env file. Please create a .env file with API_TOKEN='YOUR_API_TOKEN_HERE'.")
-    raise SystemExit()
-    # exit or raise an exception here
+    raise RuntimeError("API_TOKEN not found in .env file. Please create a .env file with API_TOKEN='YOUR_API_TOKEN_HERE'.")
 
 if not WEBHOOK_URL:
-    print("Error: WEBHOOK_URL not found in .env file. Please create a .env file with WEBHOOK_URL='DISCORD_SERVER_WEBHOOK_URL'.")
-    raise SystemExit()
-    # exit or raise an exception here
+    raise RuntimeError("WEBHOOK_URL not found in .env file. Please create a .env file with WEBHOOK_URL='DISCORD_SERVER_WEBHOOK_URL'.")
 
 def send_to_discord(message):
     payload = {"content": message}
