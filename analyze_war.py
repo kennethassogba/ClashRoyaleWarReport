@@ -17,7 +17,7 @@ if not DISCORD_WEBHOOK_URL:
 def send_to_discord(message):
     payload = {"content": message}
     response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
-    if response.status_code != 200:
+    if not response.ok:
         print(f"Erreur API : {response.status_code}")
         print(f"API Response Body: {response.text}") # Added to show full response
         response.raise_for_status()  # Raise an exception for bad status codes
