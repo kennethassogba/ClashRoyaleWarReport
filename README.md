@@ -11,11 +11,9 @@ official Clash Royale API and publishes a top 5 report to Discord every Monday.
 
 ## Initial Configuration
 
-### 1\. Clash Royale API
+### 1. Clash Royale API
 
-Create a token on the Clash Royale Developer portal.  
-Since GitHub Actions use dynamic outbound IP addresses, you might need to use a
-proxy or update the token if the connection is refused.
+Create a token on the Clash Royale Developer portal.
 
 ### 2\. Discord Webhook
 
@@ -40,12 +38,14 @@ It calculates:
 
 ## Execution
 
-### Automatic
+**Important Note on Execution:** The Supercell API requires API keys to be associated with specific, whitelisted IP addresses. Because GitHub-hosted runners use a wide, dynamic range of IP addresses, it is not feasible to run this script directly via standard GitHub Actions.
 
-The script runs automatically every Monday at 08:00 UTC via GitHub Actions.
+To run this project, you must execute the script from a machine (or a self-hosted GitHub runner) with a static IP address that has been whitelisted for your Supercell API key.
 
-### Manual
+### Manual Execution
 
-You can trigger the script manually via the Actions tab on GitHub by selecting
-Clash Royale War Report and clicking Run workflow.
+You can run the script locally from a whitelisted machine:
+```bash
+python analyze_war.py
+```
 

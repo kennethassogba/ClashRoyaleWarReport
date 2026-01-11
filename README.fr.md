@@ -13,7 +13,6 @@ Ce projet récupère automatiquement les statistiques de guerre pour le clan CCP
 ### 1. API Clash Royale
 
 Créez un jeton sur le portail des développeurs de Clash Royale.
-Étant donné que les GitHub Actions utilisent des adresses IP sortantes dynamiques, vous devrez peut-être utiliser un proxy ou mettre à jour le jeton si la connexion est refusée.
 
 ### 2. Webhook Discord
 
@@ -36,10 +35,13 @@ Il calcule :
 
 ## Exécution
 
-### Automatique
+**Note Importante sur l'Exécution :** L'API Supercell exige que les clés API soient associées à des adresses IP spécifiques et mises sur liste blanche. Étant donné que les runners hébergés par GitHub utilisent une large plage dynamique d'adresses IP, il n'est pas possible d'exécuter ce script directement via les GitHub Actions standards.
 
-Le script s'exécute automatiquement chaque lundi à 08h00 UTC via GitHub Actions.
+Pour exécuter ce projet, vous devez lancer le script depuis une machine (ou un runner auto-hébergé sur GitHub) disposant d'une adresse IP statique qui a été mise sur liste blanche pour votre clé API Supercell.
 
-### Manuelle
+### Exécution Manuelle
 
-Vous pouvez déclencher le script manuellement via l'onglet `Actions` sur GitHub en sélectionnant `Clash Royale War Report` et en cliquant sur `Run workflow`.
+Vous pouvez exécuter le script localement depuis une machine autorisée :
+```bash
+python analyze_war.py
+```
