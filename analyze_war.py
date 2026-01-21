@@ -1,94 +1,187 @@
+"""
+Fetches Clash Royale war data, analyzes player performance, generates a banner
+for the winner, and posts a summary to a Discord webhook.
+"""
+
+import json
 import os
-import requests
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
+import requests
+from huggingface_hub import InferenceClient
 
-# Configuration
-CLASH_API_TOKEN = os.environ.get('CLASH_API_TOKEN')
-DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
-CLAN_TAG = "%23LLJ8LYRP" # Le # doit être encodé en %23
+# --- Configuration ---
+CLASH_API_TOKEN = os.environ.get("CLASH_API_TOKEN")
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+CLAN_TAG = "#LLJ8LYRP"
 CLAN_URL = "https://royaleapi.com/clan/LLJ8LYRP/war/analytics"
+HUGGING_FACE_MODEL = "black-forest-labs/FLUX.1-dev"
 
-if not CLASH_API_TOKEN:
-    raise RuntimeError("CLASH_API_TOKEN environment variable not set.")
+# --- Validate Configuration ---
+if not all([CLASH_API_TOKEN, DISCORD_WEBHOOK_URL, HF_TOKEN]):
+    missing = [
+        name
+        for name, var in {
+            "CLASH_API_TOKEN": CLASH_API_TOKEN,
+            "DISCORD_WEBHOOK_URL": DISCORD_WEBHOOK_URL,
+            "HF_TOKEN": HF_TOKEN,
+        }.items()
+        if not var
+    ]
+    raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
 
-if not DISCORD_WEBHOOK_URL:
-    raise RuntimeError("DISCORD_WEBHOOK_URL environment variable not set.")
+# --- API Clients ---
+huggingface_client = InferenceClient(provider="auto", api_key=HF_TOKEN)
 
-def send_to_discord(message):
-    payload = {"content": message}
-    response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
-    if not response.ok:
-        print(f"Erreur API : {response.status_code}")
-        print(f"API Response Body: {response.text}") # Added to show full response
-        response.raise_for_status()  # Raise an exception for bad status codes
 
-def fetch_war_data():
-    url = f"https://api.clashroyale.com/v1/clans/{CLAN_TAG}/riverracelog"
+def _clash_royale_api_get(endpoint: str) -> Dict[str, Any]:
+    """Helper to make GET requests to the Clash Royale API."""
+    url = f"https://api.clashroyale.com/v1/{endpoint}"
     headers = {"Authorization": f"Bearer {CLASH_API_TOKEN}"}
     response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get('items', [])
-    else:
-        print(f"Erreur API : {response.status_code}")
-        print(f"API Response Body: {response.text}") # Added to show full response
-        response.raise_for_status()  # Raise an exception for bad status codes
+    if not response.ok:
+        print(f"API Error: {response.status_code}")
+        raise RuntimeError(f"API Response Body: {response.text}")
+    return response.json()
+
+
+def fetch_war_data() -> List[Dict[str, Any]]:
+    """Fetches the river race log for the clan."""
+    encoded_clan_tag = CLAN_TAG.replace("#", "%23")
+    data = _clash_royale_api_get(f"clans/{encoded_clan_tag}/riverracelog")
+    return data.get("items", [])
+
+
+def get_player_deck(player_tag: str) -> List[str]:
+    """Fetches the current deck for a given player."""
+    encoded_player_tag = player_tag.replace("#", "%23")
+    try:
+        data = _clash_royale_api_get(f"players/{encoded_player_tag}")
+        cards = data.get("currentDeck", [])
+        return [c["name"] for c in cards]
+    except RuntimeError:
+        print(f"Could not fetch deck for player {player_tag}. Skipping banner.")
+        return []
+
+
+def generate_banner(player_name: str, deck: List[str]) -> Optional[bytes]:
+    """Generates a banner image using Hugging Face Inference API."""
+    deck_str = ", ".join(deck)
+    prompt = (
+        f"A cinematic epic fantasy banner celebrating the Clash Royale winner named \"{player_name}\". "
+        f"Depict a dynamic battle arena scene featuring characters like {deck_str}, with cinematic lighting and photorealistic textures blended with subtle painterly brushwork. "
+        "Do NOT look like an AI-generated image: avoid obvious digital artifacts, repetitive patterns, or synthetic textures. No watermarks or signatures. "
+        "Render the player's name prominently \"{player_name}\" and legibly as an integrated element of the scene."
+        "Render the clan's name prominently \"CCPOM\" and legibly as an integrated element of the scene."
+        "High detail, natural anatomy, realistic lighting, shallow depth of field, slight film grain, victory atmosphere."
+    )
+    print(prompt)
+
+    try:
+        image = huggingface_client.text_to_image(prompt, model=HUGGING_FACE_MODEL)
+        with BytesIO() as buffer:
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception as e:
+        print(f"Erreur generation image : {e}")
         return None
 
-def analyze_and_post():
-    items = fetch_war_data()
-    if not items:
-        return
 
-    # Extraction des données des 4 dernières guerres
-    history = {}
+def send_to_discord(message: str, image_bytes: Optional[bytes] = None) -> None:
+    """Sends a message and an optional image to the Discord webhook."""
+    if image_bytes:
+        files = {"file": ("banner.png", image_bytes, "image/png")}
+        payload_json = json.dumps({"content": message})
+        response = requests.post(
+            DISCORD_WEBHOOK_URL, data={"payload_json": payload_json}, files=files
+        )
+    else:
+        response = requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
 
-    # On itère sur les 4 dernières entrées du log
-    recent_wars = items[:4]
+    if not response.ok:
+        print(f"API Error sending to Discord: {response.status_code}")
+        raise RuntimeError(f"API Response Body: {response.text}")
+
+
+def process_war_data(war_items: List[Dict[str, Any]]) -> pd.DataFrame:
+    """Processes war data to calculate scores and averages for each player."""
+    history: Dict[str, Dict[str, Any]] = {}
+    recent_wars = war_items[:4]
 
     for i, war in enumerate(recent_wars):
-        for participant in war.get('standings', []):
-            clan = participant.get('clan', {})
-            if clan.get('tag') == "#LLJ8LYRP":
-                for p in clan.get('participants', []):
-                    tag = p['tag']
-                    name = p['name']
-                    fame = p['fame']
+        for standing in war.get("standings", []):
+            clan = standing.get("clan", {})
+            if clan.get("tag") == CLAN_TAG:
+                for p in clan.get("participants", []):
+                    if p["fame"] > 0:
+                        tag = p["tag"]
+                        if tag not in history:
+                            history[tag] = {"name": p["name"], "scores": [0] * 4}
+                        history[tag]["scores"][i] = p["fame"]
 
-                    if tag not in history:
-                        history[tag] = {'name': name, 'scores': [0, 0, 0, 0]}
-                    history[tag]['scores'][i] = fame
+    if not history:
+        return pd.DataFrame()
 
-    # Transformation en DataFrame pour calculs
-    data = []
-    for tag, info in history.items():
-        data.append({
-            'name': info['name'],
-            'last_war': info['scores'][0],
-            'avg': sum(info['scores']) / 4
-        })
+    data = [
+        {
+            "tag": tag,
+            "name": info["name"],
+            "last_war": info["scores"][0],
+            "avg": sum(info["scores"]) / len(info["scores"]),
+        }
+        for tag, info in history.items()
+    ]
+    return pd.DataFrame(data)
 
-    df = pd.DataFrame(data)
 
-    # 1. Top 5 Dernière Guerre
-    top_5_last = df.sort_values(by='last_war', ascending=False).head(5)
+def format_leaderboard_message(
+    top_5_last: pd.DataFrame, top_5_avg: pd.DataFrame
+) -> str:
+    """Formats the leaderboard message for Discord."""
+    message_lines = ["Bravo à tous pour vos efforts en guerre de clan !", ""]
 
-    # 2. Top 5 Moyenne 4 semaines
-    top_5_avg = df.sort_values(by='avg', ascending=False).head(5)
-
-    # Message
-    message = "Bravo à tous pour vos efforts en guerre de clan !\n\n"
-
-    message += "**TOP 5 - DERNIÈRE GUERRE**\n"
+    message_lines.append("**TOP 5 - DERNIÈRE GUERRE**")
     for i, (_, row) in enumerate(top_5_last.iterrows(), 1):
-        message += f"{i}. {row['name']} — {int(row['last_war'])} pts\n"
+        message_lines.append(f"{i}. {row['name']} — {int(row['last_war'])} pts")
 
-    message += "\n**TOP 5 - MOYENNE GLISSANTE (4 SEMAINES)**\n"
+    message_lines.append("")
+    message_lines.append("**TOP 5 - MOYENNE GLISSANTE (4 SEMAINES)**")
     for i, (_, row) in enumerate(top_5_avg.iterrows(), 1):
-        message += f"{i}. {row['name']} — {row['avg']:.0f} pts/semaine\n"
+        message_lines.append(f"{i}. {row['name']} — {row['avg']:.0f} pts/semaine")
 
-    message += f"\nRetrouvez le classement complet ici : {CLAN_URL}"
+    message_lines.append("")
+    message_lines.append(f"Retrouvez le classement complet ici : {CLAN_URL}")
 
-    send_to_discord(message)
+    return "\n".join(message_lines)
+
+
+def main() -> None:
+    """Main function to run the analysis and post to Discord."""
+    war_items = fetch_war_data()
+    if not war_items:
+        print("No war data found. Exiting.")
+        return
+
+    df = process_war_data(war_items)
+    if df.empty:
+        print("No participant data found. Exiting.")
+        return
+
+    top_5_last = df.sort_values(by="last_war", ascending=False).head(5)
+    top_5_avg = df.sort_values(by="avg", ascending=False).head(5)
+
+    winner = top_5_last.iloc[0]
+    deck = get_player_deck(winner["tag"])
+    image_bytes = generate_banner(winner["name"], deck) if deck else None
+
+    message = format_leaderboard_message(top_5_last, top_5_avg)
+
+    send_to_discord(message, image_bytes)
+    print("Report sent to Discord successfully.")
+
 
 if __name__ == "__main__":
-    analyze_and_post()
+    main()
